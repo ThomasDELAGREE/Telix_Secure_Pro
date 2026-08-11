@@ -18,57 +18,53 @@
 | ~~`certbot` (HTTP-01)~~ | ❌ Remplace | → voir ADR-007 |
 | `npm-provisioning` (NPM + DNS-01 OVH) | ✅ Terminé | `7cd5403`, `66321a4` |
 | `captive-portal` | ✅ Terminé | `e73e5bf`, `51b69c4`, `76de9df`, `3d8677c`, `bcebdd3` |
-| `siem-connector` | 🔲 À faire | — |
+| `siem-connector` | ✅ Terminé (voir limitation auth Sekoia) | `bcef70f`, `002c519` |
 | CI/CD complet | 🟡 Partiel | `cc8f08e` |
 
+**🎉 Tous les modules fonctionnels prevus initialement sont desormais
+développés.** Reste des points d'affinage/validation lignes ci-dessous.
+
 ---
 
-## Étape 8 — Module `captive-portal`
-**Date :** 2026-08-11 | **Commits :** `e73e5bf`, `51b69c4`, `76de9df`, `3d8677c`, `bcebdd3`
+## Étape 9 — Module `siem-connector`
+**Date :** 2026-08-11 | **Commits :** `bcef70f`, `002c519`
 
 ### Ce qui a été fait
-- **Scaffold React 18 + TypeScript + Vite + TailwindCSS**, buildable en image
-  Docker legere (multi-etapes Node -> Nginx statique)
-- **`WifiParamsContext.tsx`** : extraction et normalisation des parametres
-  MAC/IP/SSID transmis par l'equipement Wi-Fi via l'URL de redirection
-  (plusieurs alias geres pour couvrir differents constructeurs)
-- **`authClient.ts`** : client Axios centralise vers `auth-service`
-  (`/api/auth/*`), gestion uniforme des messages d'erreur
-- **4 pages de connexion** : choix du type, corporate (LDAP/Azure AD),
-  visiteur SMS (2 etapes), visiteur chambre d'hotel, page de succes
-- Reintegration du service `captive-portal` dans `docker-compose.yml`, comme
-  cible finale du proxy host NPM (`TELIX_FORWARD_HOST=captive-portal`)
-- Tests unitaires (Vitest) sur la logique de normalisation MAC
-- Documentation : `docs/captive-portal.md`
+- **Logstash OSS** (Apache 2.0, sans X-Pack) : pipeline unique
+  `graylog-to-sekoia.conf`
+- **Input GELF** (port 12202, distinct de celui de `log-service` pour ne pas
+  interferer avec l'ingestion primaire Graylog)
+- **Filtres** : renommage des champs vers le vocabulaire CEF, calcul d'une
+  severite automatique selon le code HTTP
+- **Output** : syslog/TLS vers Sekoia, codec `cef` (plugin communautaire
+  `logstash-codec-cef`, open source)
+- Ajout du service `siem-connector` dans `docker-compose.yml`
+- Documentation : `docs/siem-connector.md`, avec mapping complet des champs
 
 ### Décisions techniques
-- **Vite plutot que Create React App** : build plus rapide, plus leger,
-  standard actuel de l'ecosysteme React
-- **TailwindCSS** : coherent avec une personnalisation visuelle rapide selon
-  l'identite de marque du client final (couleur `telix` isolee dans
-  `tailwind.config.js`, facilement remplacable)
-- **Alias multiples de parametres URL** pour la MAC/IP : evite de coder en
-  dur un format specifique a un seul constructeur Wi-Fi, plus robuste face a
-  l'inconnu du materiel final
+- **Logstash OSS plutot que Fluentd/Vector** : coherent avec l'ecosysteme
+  Elastic deja utilise pour `log-service` (Graylog s'appuie sur
+  Elasticsearch), et le plugin CEF est mature et bien documente
+- **Port GELF distinct (12202)** : evite toute interference avec le flux
+  primaire `proxy-service -> log-service` (port 12201)
 
-### ⚠️ Points a valider avec l'utilisateur
-- **Format exact des parametres transmis par l'equipement Wi-Fi cible** : les
-  alias couverts sont ceux des conventions les plus courantes (Unifi, Cisco,
-  Aruba, Ruckus, MikroTik), mais non testes contre un equipement reel
-- **Integration PMS hotelier** pour automatiser le provisionnement des codes
-  de chambre (actuellement manuel)
-- **Identite visuelle finale** (logo, couleurs) : placeholder actuel a
-  remplacer
-
-### Prochaines étapes identifiées
-- [ ] `siem-connector` : dernier module fonctionnel restant (Logstash -> CEF -> Sekoia)
-- [ ] Tests end-to-end du parcours complet (redirection Wi-Fi -> auth -> acces reseau)
+### ⚠️ Points a valider avec l'utilisateur (bloquants pour la mise en prod)
+- **Mécanisme d'authentification exact attendu par l'intake Sekoia** (cle
+  d'intake, mTLS, whitelisting IP...) -- non implemente par manque de
+  documentation Sekoia officielle disponible au moment du developpement
+- **Configuration de l'output GELF cote Graylog** vers `siem-connector` :
+  manuelle actuellement (pas encore scriptee dans le provisioning
+  `log-service`)
+- **Mapping CEF** : a completer si Sekoia attend des champs specifiques
+  additionnels
 
 ---
 
-## Étape 9 — Module `siem-connector` _(à venir)_
+## Prochaines étapes possibles (aucune n'est bloquante pour un premier POC)
 
-### Objectifs
-- Logstash consomme les logs Graylog (GELF output ou lecture Elasticsearch)
-- Formatage CEF (Common Event Format), incluant MAC et type d'identifiant
-- Envoi vers Sekoia via Syslog/TLS port 10514
+- [ ] Lever les points d'authentification Sekoia ci-dessus avec un contact Sekoia
+- [ ] Automatiser l'output GELF Graylog -> siem-connector dans le provisioning
+- [ ] Tests end-to-end du parcours complet (redirection Wi-Fi -> auth -> tracabilite -> SIEM)
+- [ ] CI/CD complet sur tous les modules (actuellement partiel, auth-service uniquement)
+- [ ] Personnalisation visuelle du portail (logo, couleurs de marque)
+- [ ] Integration PMS hotelier pour le provisionnement automatique des codes de chambre
