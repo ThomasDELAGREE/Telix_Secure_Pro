@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+.env
+*.env
+
+# Node / React
+node_modules/
+.npm
+.yarn
+dist/
+build/
+.next/
+
+# Secrets & config locaux
+*.secret
+*.key
+*.pem
+*.crt
+infra/.env
+infra/.env.local
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Tests
+.pytest_cache/
+coverage/
+.coverage
+htmlcov/
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
