@@ -14,8 +14,9 @@
 | `proxy-service` | ✅ Terminé | `ed5ab70`, `6e71cdb`, `5379e19` |
 | `log-service` | ✅ Terminé | `488fc11`, `5c126f1` |
 | Conformité LCEN (retention) | ✅ Confirmée | `0a5b899` (ADR-006) |
-| `gateway` | ✅ Terminé | `b78a383`, `d24c1ab` |
-| Renouvellement TLS (Certbot) | ✅ Terminé | `da833ee`, `c43ce4e`, `1d9f764`, `03b2620` |
+| ~~`gateway` (Nginx custom)~~ | ❌ Remplace | `b78a383`, `d24c1ab` → voir ADR-007 |
+| ~~`certbot` (HTTP-01)~~ | ❌ Remplace | `da833ee`...`03b2620` → voir ADR-007 |
+| `npm-provisioning` (NPM + DNS-01 OVH) | ✅ Terminé | `7cd5403`, `66321a4` |
 | `captive-portal` | 🔲 À faire | — |
 | `siem-connector` | 🔲 À faire | — |
 | CI/CD complet | 🟡 Partiel | `cc8f08e` |
@@ -26,7 +27,6 @@
 **Date :** 2026-08-11 | **Commit :** `ad8147f`
 
 Création du dépôt, arborescence complète, README, docker-compose de base.
-Stack : FastAPI, React, Squid, Graylog, Logstash, PostgreSQL, Redis, Nginx (100% open source).
 
 ---
 
@@ -42,7 +42,6 @@ migrations Alembic, tests, CI GitHub Actions.
 **Date :** 2026-08-11 | **Commits :** `ed5ab70`, `6e71cdb`
 
 Proxy Squid + ACL externe (Redis) + logs JSON + shipper GELF vers Graylog.
-Couplage faible auth-service <-> proxy-service via Redis partagé.
 
 ---
 
@@ -53,74 +52,83 @@ Couplage faible auth-service <-> proxy-service via Redis partagé.
 Champ `mac_address` sur tous les endpoints, nouveau type d'auth `room_number`
 (hôtel), registre Redis enrichi (JSON), logs proxy enrichis.
 
-**Hypotheses ouvertes :** récupération de la MAC côté équipement Wi-Fi ; intégration
-PMS hôtelier pour `room_codes`.
-
 ---
 
 ## Étape 5 — Module `log-service`
 **Date :** 2026-08-11 | **Commits :** `488fc11`, `5c126f1`
 
-Stack Graylog 6 + Elasticsearch 8 + MongoDB 6, provisioning automatique (index set
-retention 365j, input GELF, stream de routage). Voir `docs/log-service.md`.
+Stack Graylog 6 + Elasticsearch 8 + MongoDB 6, provisioning automatique
+(index set retention 365j, input GELF, stream de routage).
 
 ---
 
 ## Étape 5bis — Conformité LCEN (retention 1 an)
 **Date :** 2026-08-11 | **Commit :** `0a5b899` | **ADR :** [ADR-006](./adr/ADR-006-lcen-retention-compliance.md)
 
-Analyse du décret n°2021-1362 (LCEN, art. 6) : la stratégie de retention par
-suppression après 365 jours **est conforme** à l'obligation legale de conservation
-d'1 an des données de connexion. Aucun changement de code necessaire.
+Analyse du décret n°2021-1362 : la retention par suppression apres 365 jours
+est conforme a l'obligation legale de conservation d'1 an.
 
 ---
 
-## Étape 6 — Module `gateway`
+## Étape 6 — Module `gateway` (Nginx custom) — ~~remplacé~~
 **Date :** 2026-08-11 | **Commits :** `b78a383`, `d24c1ab`
 
-Reverse proxy Nginx : redirection HTTP->HTTPS, routage vers captive-portal et
-auth-service, rate limiting (global + renforce sur l'auth), headers de securite
-OWASP. Voir `docs/gateway.md`.
-
-**Hypotheses ouvertes à l'epoque :** renouvellement TLS automatique (resolu
-ci-dessous), CSP a adapter selon le frontend.
+Reverse proxy Nginx custom : TLS, routage, rate limiting, headers de securite.
+**Remplace a l'etape 6ter par Nginx Proxy Manager — voir ADR-007.**
 
 ---
 
-## Étape 6bis — Renouvellement TLS automatique (Certbot)
+## Étape 6bis — Renouvellement TLS automatique (Certbot HTTP-01) — ~~remplacé~~
 **Date :** 2026-08-11 | **Commits :** `da833ee`, `c43ce4e`, `1d9f764`, `03b2620`
 
+Service `certbot` + defi HTTP-01 + bascule automatique de certificat dans le
+`gateway`. **Remplace a l'etape 6ter — voir ADR-007.**
+
+---
+
+## Étape 6ter — Migration vers Nginx Proxy Manager + DNS-01 OVH
+**Date :** 2026-08-11 | **Commits :** `7cd5403`, `66321a4`
+**ADR :** [ADR-007](./adr/ADR-007-migration-npm-dns01.md)
+
+### Contexte
+L'utilisateur a indique que l'infrastructure existante du groupe
+(`groupe-odisecure.fr`) utilise deja Nginx Proxy Manager avec un defi DNS-01
+(plugin OVH), provisionne par des scripts Python existants. Decision
+d'aligner Telix_Secure_Pro sur cette approche plutot que de maintenir une
+solution Nginx/Certbot HTTP-01 parallele.
+
 ### Ce qui a été fait
-- Nouveau service **`certbot`** (client officiel Let's Encrypt, image officielle) :
-  émission initiale + boucle de renouvellement automatique (verif. toutes les 12h)
-- **Défi ACME HTTP-01** : le `gateway` sert desormais `/.well-known/acme-challenge/`
-  en clair (meme apres la redirection HTTPS generale) via un volume webroot partage
-- **Bascule automatique** dans `gateway/entrypoint.sh` : detecte un certificat
-  Let's Encrypt valide et l'utilise a la place du certificat auto-signe, avec
-  `nginx -s reload` sans coupure de service
-- **Fallback robuste** : si le domaine n'est pas public (dev local), l'echec
-  d'emission est logge sans jamais bloquer le demarrage — le certificat
-  auto-signe de secours prend le relais automatiquement
-- Documentation dédiée : `docs/tls-renewal-certbot.md`
+- **Suppression** des modules `gateway/` et `certbot/` (Nginx custom + Certbot HTTP-01)
+- **Nouveau module `npm-provisioning/`** avec deux scripts idempotents,
+  adaptes des scripts fournis par l'utilisateur :
+  - `ovh_dns_setup.py` : cree/met a jour l'enregistrement DNS A du sous-domaine
+    via l'API OVH officielle (client `ovh`)
+  - `npm_proxy_host_setup.py` : cree/met a jour le proxy host dans NPM avec
+    certificat Let's Encrypt via **defi DNS-01** (`dns_challenge: True`,
+    `dns_provider: ovh`), au lieu du HTTP-01 utilise precedemment
+- `docker-compose.yml` allege : les services applicatifs restent inchanges,
+  mais ne sont plus exposes/geres par un reverse proxy local (NPM etant
+  externe a ce depot)
+- Documentation : `docs/npm-provisioning.md`, `ADR-007`
 
-### Décisions techniques
-- **Certbot plutot que reverse-proxy integre type Traefik/Caddy** : coherent avec
-  le choix Nginx deja fait pour `gateway` (ADR implicite de l'etape 6), pas de
-  remise en cause de l'architecture existante
-- **HTTP-01 plutot que DNS-01** : plus simple a mettre en oeuvre sans dependance
-  a un fournisseur DNS specifique ; suffisant tant que le port 80 est exposable
-  publiquement
-- **Reload sans coupure** (`nginx -s reload`) plutot qu'un restart du conteneur :
-  evite toute interruption du portail lors du renouvellement
+### Decisions techniques
+- **DNS-01 conserve** (pas de retour a HTTP-01) : c'est le mecanisme deja
+  configure sur l'infra NPM existante (plugin OVH), et il a l'avantage de ne
+  pas necessiter l'exposition publique du port 80
+- **Secrets jamais committes** : les scripts lisent des variables
+  d'environnement ; seuls des placeholders figurent dans `.env.example`
+- **Client officiel `ovh`** plutot que des appels API bruts : plus robuste et
+  maintenu par la communaute
 
-### ⚠️ Limitations connues (documentées dans `docs/tls-renewal-certbot.md`)
-- Un seul domaine gere pour l'instant (`GATEWAY_SERVER_NAME`) — pas de
-  multi-domaine
-- Uniquement le defi HTTP-01 — pas de support DNS-01 si le port 80 ne peut pas
-  etre expose publiquement dans certains contextes de deploiement
+### ⚠️ Points a valider avec l'utilisateur
+- Nom/port exacts du conteneur cible pour le forward NPM une fois
+  `captive-portal` developpe (suppose actuellement : `captive-portal:80`)
+- Frequence d'execution des scripts de provisioning (ponctuelle vs automatisee)
+- Version de NPM et configuration exacte du plugin DNS OVH deja en place
+  (non verifiable depuis ce depot)
 
 ### Prochaines étapes identifiées
-- [ ] `captive-portal` : frontend React
+- [ ] `captive-portal` : frontend React, cible finale du proxy host NPM
 - [ ] `siem-connector` : dernier module fonctionnel restant
 
 ---
@@ -140,4 +148,4 @@ ci-dessous), CSP a adapter selon le frontend.
 - Interface React + TailwindCSS
 - Récupération des paramètres MAC/IP transmis par l'équipement Wi-Fi (ADR-005)
 - Page login corporate (LDAP/Azure AD) et visiteur (SMS OTP / numéro de chambre)
-- Consomme l'API via `/api/auth/*` derriere le `gateway`
+- Point de forward final du proxy host NPM (`TELIX_FORWARD_HOST`/`TELIX_FORWARD_PORT`)
