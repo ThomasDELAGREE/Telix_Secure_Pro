@@ -12,8 +12,8 @@
 | Structure de base | ✅ Terminé | `ad8147f` |
 | `auth-service` | ✅ Terminé | `2988100`, `cc8f08e`, `6e71cdb`, `101d623` |
 | `proxy-service` | ✅ Terminé | `ed5ab70`, `6e71cdb`, `5379e19` |
+| `log-service` | ✅ Terminé | `488fc11`, `5c126f1` |
 | `captive-portal` | 🔲 À faire | — |
-| `log-service` | 🔲 À faire | — |
 | `siem-connector` | 🔲 À faire | — |
 | `gateway` | 🔲 À faire | — |
 | CI/CD complet | 🟡 Partiel | `cc8f08e` |
@@ -23,55 +23,24 @@
 ## Étape 1 — Structure de base
 **Date :** 2026-08-11 | **Commit :** `ad8147f`
 
-### Ce qui a été fait
-- Création du dépôt GitHub public, licence Apache 2.0
-- Arborescence complète des modules
-- `README.md`, `.gitignore`, `docs/`, `infra/docker-compose.yml`, `infra/.env.example`
-
-### Décisions techniques
-- Stack 100% open source : FastAPI, React, Squid, Graylog, Logstash, PostgreSQL, Redis
-- Architecture microservices pour déploiement indépendant de chaque composant
-- Docker Compose pour le développement, Kubernetes envisagé pour la production
+Création du dépôt, arborescence complète, README, docker-compose de base.
+Stack choisie : FastAPI, React, Squid, Graylog, Logstash, PostgreSQL, Redis (100% open source).
 
 ---
 
 ## Étape 2 — Module `auth-service`
 **Date :** 2026-08-11 | **Commits :** `2988100`, `cc8f08e`
 
-### Ce qui a été fait
-- API FastAPI avec 4 endpoints (health, corporate, request-otp, verify-otp)
-- Auth AD/LDAP via `ldap3` (bind service + bind utilisateur, vérif compte actif)
-- Auth Azure AD via ROPC flow + Microsoft Graph
-- OTP SMS visiteur via Kannel + Redis (TTL 5 min, usage unique)
-- Traçabilité complète en base PostgreSQL (`auth_sessions`)
-- Migrations Alembic
-- 7 tests unitaires (OTP, JWT, health)
-- Pipeline CI GitHub Actions
-
-### Décisions techniques
-- **ROPC flow Azure AD** : adapté au portail captif interne. À remplacer par Authorization Code flow pour usage public.
-- **OTP usage unique** : suppression Redis immédiate après validation.
-- **Traçabilité systématique** : succès ET échecs enregistrés avec IP, user-agent, timestamp.
-- **JWT HS256** : suffisant pour usage interne. Migrer vers RS256 si multi-service.
+API FastAPI (corporate LDAP/Azure AD + visiteur OTP SMS), traçabilité en base,
+migrations Alembic, tests, CI GitHub Actions.
 
 ---
 
 ## Étape 3 — Module `proxy-service`
 **Date :** 2026-08-11 | **Commits :** `ed5ab70`, `6e71cdb`
 
-### Ce qui a été fait
-- Proxy Squid (port 3128) avec contrôle d'accès par IP authentifiée
-- ACL externe (`session_helper.py`) interrogeant Redis (`telix:active_session:<ip>`)
-- `auth-service` écrit désormais ce mapping IP→utilisateur à chaque login réussi
-  (`session_registry.py`)
-- Logs Squid au format JSON personnalisé (`telix_json`) + `gelf_shipper.py` vers Graylog
-- Intégration dans `infra/docker-compose.yml`
-- 3 tests unitaires, documentation dédiée `docs/proxy-service.md`
-
-### Décisions techniques
-- **Couplage faible via Redis** entre auth-service et proxy-service
-- **Squid + external_acl_type** pour brancher un helper personnalisé
-- **GELF/UDP** natif Graylog, faible overhead
+Proxy Squid + ACL externe (Redis) + logs JSON + shipper GELF vers Graylog.
+Couplage faible auth-service <-> proxy-service via Redis partagé.
 
 ---
 
@@ -79,83 +48,75 @@
 **Date :** 2026-08-11 | **Commits :** `101d623`, `5379e19`, `72061e1`, `8f041a1`
 **ADR :** [ADR-005](./adr/ADR-005-mac-and-generic-identity.md)
 
-### Ce qui a été fait
-- Ajout du champ optionnel `mac_address` sur tous les endpoints d'authentification
-  (`/auth/corporate`, `/auth/visitor/request-otp`, `/auth/visitor/verify-otp`, nouveau
-  `/auth/visitor/room`), normalisé via `app/core/mac_utils.py`
-- Nouveau type d'authentification visiteur : **numéro de chambre** (déploiement
-  hôtelier) via `room_service.py` + table `room_codes` (migration `0002`)
-- Le registre Redis (`session_registry.py`) stocke désormais une identité complète
-  en JSON : `{ user_identifier, identifier_type, mac_address }` — `identifier_type`
-  ∈ `{ldap, azure_ad, sms_otp, room_number}`
-- `proxy-service` (`session_helper.py`, `gelf_shipper.py`) lit ce format enrichi et
-  ajoute `_mac_address` / `_identifier_type` dans les logs GELF envoyés à Graylog
-- Rétro-compatibilité assurée : l'ancien format Redis (chaîne brute) reste lisible
-- 11 nouveaux tests unitaires (MAC utils, session registry enrichi, room service)
-- Documentation mise à jour : `docs/auth-service.md`, `docs/proxy-service.md`, ADR-005
+Champ `mac_address` sur tous les endpoints, nouveau type d'auth `room_number`
+(hôtel), registre Redis enrichi (JSON), logs proxy enrichis. MAC = métadonnée de
+traçabilité, pas clé de contrôle d'accès (limitation NAT documentee).
 
-### Décisions techniques
-- **MAC en métadonnée de traçabilité, pas en clé de contrôle d'accès** : le contrôle
-  d'accès Squid reste basé sur l'IP (c'est elle que Squid voit réellement) ; la MAC
-  enrichit les logs pour la conformité/traçabilité mais n'est pas le critère d'autorisation.
-- **Champ MAC optionnel partout** : le système dégrade gracieusement si l'équipement
-  Wi-Fi ne transmet pas cette information.
-- **room_codes provisionné manuellement** dans un premier temps (voir hypothèse ci-dessous).
-
-### ⚠️ Hypothèses à valider (bloquantes pour la suite)
-- **Récupération de la MAC** : un navigateur ne peut pas lire la MAC de l'appareil.
-  Elle doit être transmise par l'équipement Wi-Fi (contrôleur) lors de la redirection
-  vers le portail captif, typiquement en paramètre d'URL (`?mac=...`). C'est le standard
-  chez Unifi/Cisco/Aruba/Ruckus/MikroTik, mais **à confirmer avec l'équipement Wi-Fi cible**
-  du client final.
-- **Intégration PMS hôtelier** : pour un vrai déploiement hôtel, il faudrait connecter
-  `room_codes` à un PMS (Odoo, Mews, Opera...) pour la génération/révocation automatique
-  des codes à l'arrivée/départ. Non fait à ce stade — à planifier si ce cas d'usage
-  est priorisé.
-
-### Prochaines étapes identifiées
-- [ ] `captive-portal` : récupérer les paramètres `mac`/`ip` transmis par l'équipement
-  Wi-Fi lors de la redirection, et les injecter dans les appels à `auth-service`
-- [ ] Endpoint admin pour provisionner/révoquer les codes de chambre (CRUD `room_codes`)
-- [ ] Filtrage de contenu (SquidGuard), métriques Prometheus (reporté depuis l'étape 3)
+**Hypotheses a valider :** récupération de la MAC côté équipement Wi-Fi (paramètre
+URL lors de la redirection) ; intégration PMS hôtelier pour `room_codes`.
 
 ---
 
-## Étape 5 — Module `captive-portal` _(à venir)_
+## Étape 5 — Module `log-service`
+**Date :** 2026-08-11 | **Commits :** `488fc11`, `5c126f1`
+
+### Ce qui a été fait
+- Stack Graylog 6 + Elasticsearch 8 + MongoDB 6 ajoutée au `docker-compose.yml`
+- Conteneur de **provisioning automatique** (`log-service/provisioning/provision.py`) :
+  crée via l'API REST Graylog, de facon idempotente :
+  - Un **index set `telix_web_traffic`** avec rotation quotidienne et retention
+    de **365 jours** (suppression automatique au-dela)
+  - Un **input GELF UDP** (port 12201) recevant les logs de `proxy-service`
+  - Un **stream `Telix - Traffic Web`** routant les messages `source=proxy-service`
+    vers l'index set dedie
+- Variables d'environnement ajoutées (`GRAYLOG_PASSWORD_SECRET`,
+  `GRAYLOG_ROOT_PASSWORD_SHA2/PLAIN`, `LOG_RETENTION_DAYS`)
+- Documentation dédiée : `docs/log-service.md`
+
+### Décisions techniques
+- **Provisioning as code** : toute la configuration fonctionnelle de Graylog
+  (input, index set, stream) est créée via script versionné plutôt que
+  manuellement dans l'UI — reproductible, reviewé en revue de code, idempotent.
+- **Retention par suppression** (`DeletionRetentionStrategy`) après 365 jours,
+  pas d'archivage à froid à ce stade (voir hypothèse ci-dessous).
+- **Isolation par stream** : les logs de trafic web sont séparés des logs
+  système Graylog par défaut, dans leur propre index set.
+
+### ⚠️ Hypothèse à valider
+- **Suppression vs archivage a froid** : au bout d'1 an, les logs sont
+  **supprimés definitivement**. Si une obligation reglementaire ou
+  contractuelle impose plutot un archivage (ex: export vers un stockage froid
+  type MinIO/S3 avant suppression), il faudra completer le provisioning.
+  A confirmer avec le client/l'obligation legale visee (ex: LCEN en France
+  impose 1 an de conservation minimum, mais ne precise pas nativement de mode
+  d'archivage particulier au-dela).
+
+### Prochaines étapes identifiées
+- [ ] Dashboard Graylog pre-construit (activite par utilisateur/MAC)
+- [ ] Regles d'alerte (volume anormal, categories sensibles)
+- [ ] `siem-connector` : Logstash consomme Graylog -> format CEF -> Sekoia
+
+---
+
+## Étape 6 — Module `siem-connector` _(à venir)_
+
+### Objectifs
+- Logstash consomme les logs Graylog (via GELF output Graylog ou lecture Elasticsearch)
+- Formatage CEF (Common Event Format), incluant MAC et type d'identifiant
+- Envoi vers Sekoia via Syslog/TLS port 10514
+
+---
+
+## Étape 7 — Module `captive-portal` _(à venir)_
 
 ### Objectifs
 - Interface React + TailwindCSS
 - Récupération des paramètres MAC/IP transmis par l'équipement Wi-Fi (ADR-005)
-- Page login corporate (username/password + choix LDAP ou Azure AD)
-- Page login visiteur (SMS OTP **ou** numéro de chambre)
-- Redirection automatique après auth réussie
-- Pages d'erreur et session expirée
-
----
-
-## Étape 6 — Module `log-service` _(à venir)_
-
-### Objectifs
-- Graylog + Elasticsearch + MongoDB
-- Rétention 365 jours (ILM Elasticsearch)
-- Dashboard Graylog : activité par utilisateur/MAC, alertes
-- Réception des logs proxy-service (GELF enrichi) déjà prête côté émetteur
-
----
-
-## Étape 7 — Module `siem-connector` _(à venir)_
-
-### Objectifs
-- Logstash consomme les logs Graylog
-- Formatage CEF (Common Event Format), incluant MAC et type d'identifiant
-- Envoi vers Sekoia via Syslog/TLS port 10514
+- Page login corporate (LDAP/Azure AD) et visiteur (SMS OTP / numéro de chambre)
 
 ---
 
 ## Étape 8 — Module `gateway` _(à venir)_
 
 ### Objectifs
-- Nginx reverse proxy + terminaison TLS (Let's Encrypt)
-- Règles de redirection portail captif
-- Rate limiting global
-- Headers de sécurité (HSTS, CSP, X-Frame-Options)
+- Nginx reverse proxy + TLS (Let's Encrypt), redirection portail captif, rate limiting, headers de securite
