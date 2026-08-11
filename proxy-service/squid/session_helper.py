@@ -4,10 +4,15 @@ Helper d'ACL externe Squid.
 
 Squid envoie sur stdin, ligne par ligne, l'adresse IP source (%SRC).
 Ce script interroge Redis pour savoir si cette IP correspond a une session
-authentifiee active (enregistree par auth-service). Il repond :
+authentifiee active (enregistree par auth-service). La valeur stockee est un
+JSON {"user_identifier": ..., "identifier_type": ..., "mac_address": ...}
+produit par auth-service/app/services/session_registry.py.
+
+Reponses :
   - "OK user=<identifiant>" si l'utilisateur est authentifie
   - "ERR message=not_authenticated" sinon
 """
+import json
 import os
 import sys
 import redis
@@ -29,11 +34,23 @@ def main() -> None:
         ip = line.split()[0]
 
         try:
-            user = client.get(f"{SESSION_KEY_PREFIX}{ip}")
+            raw = client.get(f"{SESSION_KEY_PREFIX}{ip}")
         except redis.RedisError:
             print('BH message="redis_unavailable"')
             sys.stdout.flush()
             continue
+
+        if not raw:
+            print('ERR message="not_authenticated"')
+            sys.stdout.flush()
+            continue
+
+        try:
+            identity = json.loads(raw)
+            user = identity.get("user_identifier")
+        except (json.JSONDecodeError, AttributeError):
+            # Retro-compatibilite : ancienne valeur stockee en texte brut (avant enrichissement)
+            user = raw
 
         if user:
             print(f"OK user={user}")
