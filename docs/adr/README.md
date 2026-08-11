@@ -10,3 +10,4 @@ Chaque décision importante est documentée ici pour garder la traçabilité des
 | [ADR-003](./ADR-003-log-retention.md) | Stratégie de rétention des logs | ✅ Accepté |
 | [ADR-004](./ADR-004-siem-format.md) | Format d'export SIEM | ✅ Accepté |
 | [ADR-005](./ADR-005-mac-and-generic-identity.md) | Identification par MAC + identifiant générique | ✅ Accepté |
+| [ADR-006](./ADR-006-lcen-retention-compliance.md) | Conformité de la rétention 1 an (LCEN) | ✅ Accepté |
