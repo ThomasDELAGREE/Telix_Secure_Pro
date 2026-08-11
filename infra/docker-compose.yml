@@ -1,5 +1,13 @@
 version: '3.9'
 
+# NOTE : le reverse proxy et la terminaison TLS ne sont plus geres dans ce
+# docker-compose depuis la migration vers Nginx Proxy Manager (NPM), qui fait
+# partie de l'infrastructure partagee existante (groupe-odisecure.fr) et n'est
+# pas versionne dans ce depot. Voir docs/npm-provisioning.md et ADR-007.
+# Les services ci-dessous restent exposes sur le reseau Docker sous leur nom
+# de service, pour que NPM (sur l'hote ou un reseau partage) puisse les cibler
+# en 'forward_host'.
+
 services:
 
   captive-portal:
@@ -104,40 +112,9 @@ services:
       - mongo_data:/data/db
     restart: unless-stopped
 
-  gateway:
-    build: ../gateway
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - GATEWAY_SERVER_NAME=${GATEWAY_SERVER_NAME}
-    volumes:
-      - gateway_certs:/etc/nginx/certs
-      - certbot_webroot:/var/www/certbot
-      - letsencrypt_certs:/etc/letsencrypt:ro
-    depends_on:
-      - captive-portal
-      - auth-service
-    restart: unless-stopped
-
-  certbot:
-    build: ../certbot
-    environment:
-      - GATEWAY_SERVER_NAME=${GATEWAY_SERVER_NAME}
-      - CERTBOT_EMAIL=${CERTBOT_EMAIL}
-    volumes:
-      - certbot_webroot:/var/www/certbot
-      - letsencrypt_certs:/etc/letsencrypt
-    depends_on:
-      - gateway
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   redis_data:
   es_data:
   mongo_data:
   graylog_data:
-  gateway_certs:
-  certbot_webroot:
-  letsencrypt_certs:
