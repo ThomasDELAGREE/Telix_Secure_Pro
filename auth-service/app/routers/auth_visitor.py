@@ -7,8 +7,15 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.core.database import get_db
 from app.models.session import AuthSession
-from app.schemas.auth import OTPRequestSchema, OTPVerifySchema, TokenResponse, OTPRequestResponse
+from app.schemas.auth import (
+    OTPRequestSchema,
+    OTPVerifySchema,
+    RoomLoginRequest,
+    TokenResponse,
+    OTPRequestResponse,
+)
 from app.services.otp_service import otp_service
+from app.services.room_service import room_service
 from app.services.session_registry import register_session
 
 logger = logging.getLogger(__name__)
@@ -38,6 +45,7 @@ async def request_otp(
         user_identifier=payload.phone,
         auth_type="sms_otp_request",
         ip_address=ip,
+        mac_address=payload.mac_address,
         success=True,
     ))
     db.commit()
@@ -63,6 +71,7 @@ async def verify_otp(
         user_identifier=payload.phone,
         auth_type="sms_otp",
         ip_address=ip,
+        mac_address=payload.mac_address,
         user_agent=user_agent,
         success=valid,
         failure_reason=None if valid else "OTP invalide ou expire",
@@ -76,8 +85,7 @@ async def verify_otp(
     if not valid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Code OTP invalide ou expire.")
 
-    # Enregistrement de la session pour que proxy-service autorise le trafic de cette IP
-    register_session(ip, payload.phone)
+    register_session(ip, payload.phone, "sms_otp", payload.mac_address)
 
     token = create_access_token(subject=payload.phone, extra_claims={"auth_type": "sms_otp"})
     return TokenResponse(
@@ -85,4 +93,43 @@ async def verify_otp(
         expires_in=settings.JWT_EXPIRY_MINUTES * 60,
         user_identifier=payload.phone,
         auth_type="sms_otp",
+    )
+
+
+@router.post("/visitor/room", response_model=TokenResponse, summary="Auth visiteur par numero de chambre (hotel)")
+async def room_login(
+    payload: RoomLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    valid = room_service.authenticate(db, payload.room_number, payload.access_code)
+
+    db.add(AuthSession(
+        user_identifier=payload.room_number,
+        auth_type="room_number",
+        ip_address=ip,
+        mac_address=payload.mac_address,
+        user_agent=user_agent,
+        success=valid,
+        failure_reason=None if valid else "Code chambre invalide ou expire",
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRY_MINUTES)
+            if valid else None
+        ),
+    ))
+    db.commit()
+
+    if not valid:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Numero de chambre ou code invalide.")
+
+    register_session(ip, payload.room_number, "room_number", payload.mac_address)
+
+    token = create_access_token(subject=payload.room_number, extra_claims={"auth_type": "room_number"})
+    return TokenResponse(
+        access_token=token,
+        expires_in=settings.JWT_EXPIRY_MINUTES * 60,
+        user_identifier=payload.room_number,
+        auth_type="room_number",
     )

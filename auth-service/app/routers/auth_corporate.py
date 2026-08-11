@@ -42,6 +42,7 @@ async def corporate_login(
         user_identifier=payload.username,
         auth_type=payload.provider,
         ip_address=ip,
+        mac_address=payload.mac_address,
         user_agent=user_agent,
         success=user_info is not None,
         failure_reason=failure_reason,
@@ -59,8 +60,9 @@ async def corporate_login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Enregistrement de la session pour que proxy-service autorise le trafic de cette IP
-    register_session(ip, user_info["username"])
+    # Enregistrement de la session (identite complete) pour que proxy-service
+    # autorise le trafic de cette IP et enrichisse la tracabilite (MAC, type).
+    register_session(ip, user_info["username"], payload.provider, payload.mac_address)
 
     token = create_access_token(
         subject=user_info["username"],
