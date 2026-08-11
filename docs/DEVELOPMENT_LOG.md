@@ -15,6 +15,7 @@
 | `log-service` | ✅ Terminé | `488fc11`, `5c126f1` |
 | Conformité LCEN (retention) | ✅ Confirmée | `0a5b899` (ADR-006) |
 | `gateway` | ✅ Terminé | `b78a383`, `d24c1ab` |
+| Renouvellement TLS (Certbot) | ✅ Terminé | `da833ee`, `c43ce4e`, `1d9f764`, `03b2620` |
 | `captive-portal` | 🔲 À faire | — |
 | `siem-connector` | 🔲 À faire | — |
 | CI/CD complet | 🟡 Partiel | `cc8f08e` |
@@ -72,48 +73,55 @@ Analyse du décret n°2021-1362 (LCEN, art. 6) : la stratégie de retention par
 suppression après 365 jours **est conforme** à l'obligation legale de conservation
 d'1 an des données de connexion. Aucun changement de code necessaire.
 
-**Points de vigilance juridiques restants (hors code) :** champ d'application exact
-du decret selon le contexte de deploiement, mention dans les mentions legales du
-portail, procedure de communication sur reqisition.
-
 ---
 
 ## Étape 6 — Module `gateway`
 **Date :** 2026-08-11 | **Commits :** `b78a383`, `d24c1ab`
 
+Reverse proxy Nginx : redirection HTTP->HTTPS, routage vers captive-portal et
+auth-service, rate limiting (global + renforce sur l'auth), headers de securite
+OWASP. Voir `docs/gateway.md`.
+
+**Hypotheses ouvertes à l'epoque :** renouvellement TLS automatique (resolu
+ci-dessous), CSP a adapter selon le frontend.
+
+---
+
+## Étape 6bis — Renouvellement TLS automatique (Certbot)
+**Date :** 2026-08-11 | **Commits :** `da833ee`, `c43ce4e`, `1d9f764`, `03b2620`
+
 ### Ce qui a été fait
-- Reverse proxy **Nginx** (image Alpine, legere) comme point d'entree unique du portail
-- **Redirection HTTP -> HTTPS** systematique (les identifiants ne transitent jamais en clair)
-- **TLS** : certificat auto-signe genere automatiquement en dev si absent
-  (`entrypoint.sh`), volume `gateway_certs` prevu pour de vrais certificats en prod
-- **Routage** : `/` -> `captive-portal`, `/api/auth/*` -> `auth-service`
-- **Rate limiting** à deux niveaux : global (10 req/s/IP) et renforce sur l'auth
-  (5 req/min/IP) pour limiter le brute-force sur les identifiants/OTP
-- **Headers de securite OWASP** : HSTS, CSP, X-Frame-Options, X-Content-Type-Options,
-  Referrer-Policy, Permissions-Policy
-- Documentation dédiée : `docs/gateway.md`
+- Nouveau service **`certbot`** (client officiel Let's Encrypt, image officielle) :
+  émission initiale + boucle de renouvellement automatique (verif. toutes les 12h)
+- **Défi ACME HTTP-01** : le `gateway` sert desormais `/.well-known/acme-challenge/`
+  en clair (meme apres la redirection HTTPS generale) via un volume webroot partage
+- **Bascule automatique** dans `gateway/entrypoint.sh` : detecte un certificat
+  Let's Encrypt valide et l'utilise a la place du certificat auto-signe, avec
+  `nginx -s reload` sans coupure de service
+- **Fallback robuste** : si le domaine n'est pas public (dev local), l'echec
+  d'emission est logge sans jamais bloquer le demarrage — le certificat
+  auto-signe de secours prend le relais automatiquement
+- Documentation dédiée : `docs/tls-renewal-certbot.md`
 
 ### Décisions techniques
-- **Nginx plutot que Traefik/Caddy** : simplicite, tres large adoption, configuration
-  explicite et versionnee (pas de decouverte automatique de services a gerer ici,
-  la topologie est fixe et connue)
-- **Rate limiting renforce specifiquement sur l'auth** : le portail captif expose
-  des endpoints sensibles (mot de passe AD, OTP SMS) qui doivent etre proteges du
-  brute-force independamment du reste du trafic
-- **Certificat auto-signe en dev, volume dedie en prod** : permet de demarrer la
-  stack immediatement sans dependance a un nom de domaine reel, tout en preparant
-  le terrain pour Let's Encrypt/Certbot en production
+- **Certbot plutot que reverse-proxy integre type Traefik/Caddy** : coherent avec
+  le choix Nginx deja fait pour `gateway` (ADR implicite de l'etape 6), pas de
+  remise en cause de l'architecture existante
+- **HTTP-01 plutot que DNS-01** : plus simple a mettre en oeuvre sans dependance
+  a un fournisseur DNS specifique ; suffisant tant que le port 80 est exposable
+  publiquement
+- **Reload sans coupure** (`nginx -s reload`) plutot qu'un restart du conteneur :
+  evite toute interruption du portail lors du renouvellement
 
-### ⚠️ Hypotheses à valider
-- **Renouvellement TLS automatique (Certbot)** non implementé à ce stade —
-  necessite un nom de domaine public resolvable, à mettre en place au deploiement reel
-- **Content-Security-Policy restrictive** (`'self'` uniquement) : à adapter une fois
-  `captive-portal` developpe si des ressources externes (CDN, polices) sont utilisees
+### ⚠️ Limitations connues (documentées dans `docs/tls-renewal-certbot.md`)
+- Un seul domaine gere pour l'instant (`GATEWAY_SERVER_NAME`) — pas de
+  multi-domaine
+- Uniquement le defi HTTP-01 — pas de support DNS-01 si le port 80 ne peut pas
+  etre expose publiquement dans certains contextes de deploiement
 
 ### Prochaines étapes identifiées
-- [ ] `captive-portal` : frontend React consommé via ce gateway
+- [ ] `captive-portal` : frontend React
 - [ ] `siem-connector` : dernier module fonctionnel restant
-- [ ] Automatisation Certbot pour la production
 
 ---
 
