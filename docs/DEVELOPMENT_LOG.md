@@ -10,9 +10,9 @@
 | Module | Statut | Commit(s) |
 |---|---|---|
 | Structure de base | ✅ Terminé | `ad8147f` |
-| `auth-service` | ✅ Terminé | `2988100`, `cc8f08e` |
+| `auth-service` | ✅ Terminé | `2988100`, `cc8f08e`, `6e71cdb` |
+| `proxy-service` | ✅ Terminé | `ed5ab70`, `6e71cdb` |
 | `captive-portal` | 🔲 À faire | — |
-| `proxy-service` | 🔲 À faire | — |
 | `log-service` | 🔲 À faire | — |
 | `siem-connector` | 🔲 À faire | — |
 | `gateway` | 🔲 À faire | — |
@@ -61,7 +61,42 @@
 
 ---
 
-## Étape 3 — Module `captive-portal` _(à venir)_
+## Étape 3 — Module `proxy-service`
+**Date :** 2026-08-11 | **Commits :** `ed5ab70`, `6e71cdb`
+
+### Ce qui a été fait
+- Proxy Squid (port 3128) avec contrôle d'accès par IP authentifiée
+- ACL externe (`session_helper.py`) interrogeant Redis (`telix:active_session:<ip>`)
+- `auth-service` écrit désormais ce mapping IP→utilisateur à chaque login réussi
+  (`session_registry.py`, appelé depuis `auth_corporate.py` et `auth_visitor.py`)
+- Logs Squid au format JSON personnalisé (`telix_json`) : user, url, méthode, statut, durée
+- `gelf_shipper.py` : suit `access.log` et expédie chaque requête en GELF/UDP vers
+  `log-service` (Graylog) pour la traçabilité et la rétention 1 an
+- Dockerfile basé sur Ubuntu 24.04 + Squid + Python 3
+- Intégration dans `infra/docker-compose.yml` (dépend de `redis` et `log-service`)
+- 3 tests unitaires sur le registre de sessions (`test_session_registry.py`)
+- Documentation dédiée : `docs/proxy-service.md`
+
+### Décisions techniques
+- **Couplage faible via Redis** : `auth-service` et `proxy-service` ne s'appellent jamais
+  directement, ils partagent uniquement une clé Redis (mapping IP→utilisateur, même TTL que le JWT).
+- **Squid + external_acl_type** : solution open source standard, permet de brancher un
+  helper personnalisé sans forker Squid.
+- **GELF/UDP** : format natif Graylog, faible overhead, adapté au volume de logs proxy.
+
+### Limitation connue / à valider
+- Le mapping est basé sur l'IP source. Si plusieurs utilisateurs partagent la même IP
+  (NAT en cascade), le modèle actuel ne les distingue pas. À valider avec l'équipement
+  Wi-Fi cible ; une évolution possible est un mapping par port source ou par MAC (DHCP).
+
+### Prochaines étapes identifiées
+- [ ] Filtrage de contenu (SquidGuard) pour catégories à risque
+- [ ] Métriques Prometheus (requêtes, refus, latence)
+- [ ] Évaluer le chiffrement du flux GELF (actuellement UDP en clair, réseau interne uniquement)
+
+---
+
+## Étape 4 — Module `captive-portal` _(à venir)_
 
 ### Objectifs
 - Interface React + TailwindCSS
@@ -72,22 +107,13 @@
 
 ---
 
-## Étape 4 — Module `proxy-service` _(à venir)_
-
-### Objectifs
-- Proxy transparent Squid
-- Injection identité utilisateur dans les headers (X-Authenticated-User)
-- Log de toutes les URLs visitées par utilisateur
-- Export logs vers Graylog (GELF UDP)
-
----
-
 ## Étape 5 — Module `log-service` _(à venir)_
 
 ### Objectifs
 - Graylog + Elasticsearch + MongoDB
 - Rétention 365 jours (ILM Elasticsearch)
 - Dashboard Graylog : activité par utilisateur, alertes
+- Réception des logs proxy-service (GELF) déjà prête côté émetteur
 
 ---
 
