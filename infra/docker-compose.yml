@@ -26,7 +26,13 @@ services:
     build: ../proxy-service
     ports:
       - "3128:3128"
-    env_file: .env
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - GRAYLOG_HOST=log-service
+      - GRAYLOG_GELF_PORT=12201
+    depends_on:
+      - redis
+      - log-service
     restart: unless-stopped
 
   log-service:

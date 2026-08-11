@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.models.session import AuthSession
 from app.schemas.auth import OTPRequestSchema, OTPVerifySchema, TokenResponse, OTPRequestResponse
 from app.services.otp_service import otp_service
+from app.services.session_registry import register_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,6 +75,9 @@ async def verify_otp(
 
     if not valid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Code OTP invalide ou expire.")
+
+    # Enregistrement de la session pour que proxy-service autorise le trafic de cette IP
+    register_session(ip, payload.phone)
 
     token = create_access_token(subject=payload.phone, extra_claims={"auth_type": "sms_otp"})
     return TokenResponse(

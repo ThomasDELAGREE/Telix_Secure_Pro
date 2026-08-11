@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.models.session import AuthSession
 from app.schemas.auth import CorporateLoginRequest, TokenResponse
 from app.services.ldap_service import ldap_service
+from app.services.session_registry import register_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,6 +58,9 @@ async def corporate_login(
             detail="Identifiants invalides ou compte non autorisé.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Enregistrement de la session pour que proxy-service autorise le trafic de cette IP
+    register_session(ip, user_info["username"])
 
     token = create_access_token(
         subject=user_info["username"],
