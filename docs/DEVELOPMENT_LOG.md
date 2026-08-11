@@ -19,52 +19,55 @@
 | `npm-provisioning` (NPM + DNS-01 OVH) | ✅ Terminé | `7cd5403`, `66321a4` |
 | `captive-portal` | ✅ Terminé | `e73e5bf`, `51b69c4`, `76de9df`, `3d8677c`, `bcebdd3` |
 | `siem-connector` | ✅ Terminé (voir limitation auth Sekoia) | `bcef70f`, `002c519` |
+| **`scripts/deploy.sh`** | ✅ Terminé | `4343971`, `<ce commit>` |
 | CI/CD complet | 🟡 Partiel | `cc8f08e` |
 
-**🎉 Tous les modules fonctionnels prevus initialement sont desormais
-développés.** Reste des points d'affinage/validation lignes ci-dessous.
+**🎉 Tous les modules fonctionnels prevus initialement sont développés, et le
+déploiement est desormais scripte de bout en bout (hors etapes manuelles
+documentees).**
 
 ---
 
-## Étape 9 — Module `siem-connector`
-**Date :** 2026-08-11 | **Commits :** `bcef70f`, `002c519`
+## Étape 10 — Script de déploiement unique `scripts/deploy.sh`
+**Date :** 2026-08-11 | **Commits :** `4343971`, `<ce commit>`
 
 ### Ce qui a été fait
-- **Logstash OSS** (Apache 2.0, sans X-Pack) : pipeline unique
-  `graylog-to-sekoia.conf`
-- **Input GELF** (port 12202, distinct de celui de `log-service` pour ne pas
-  interferer avec l'ingestion primaire Graylog)
-- **Filtres** : renommage des champs vers le vocabulaire CEF, calcul d'une
-  severite automatique selon le code HTTP
-- **Output** : syslog/TLS vers Sekoia, codec `cef` (plugin communautaire
-  `logstash-codec-cef`, open source)
-- Ajout du service `siem-connector` dans `docker-compose.yml`
-- Documentation : `docs/siem-connector.md`, avec mapping complet des champs
+- **`scripts/deploy.sh`** : script bash idempotent qui enchaine
+  automatiquement :
+  1. Vérifications préalables (Docker, Docker Compose, presence de `infra/.env`)
+  2. `docker compose up -d --build`
+  3. Attente active de la disponibilite de l'API Graylog
+  4. Provisioning Graylog (retention 1 an, input GELF, stream)
+  5. Provisioning DNS OVH + proxy host NPM (defi DNS-01), avec option de
+     saut (`SKIP_NPM=true`) pour les environnements de developpement
+- Documentation complète : `docs/deployment.md` (pre-requis, variables,
+  etapes manuelles restantes, verification post-deploiement)
 
 ### Décisions techniques
-- **Logstash OSS plutot que Fluentd/Vector** : coherent avec l'ecosysteme
-  Elastic deja utilise pour `log-service` (Graylog s'appuie sur
-  Elasticsearch), et le plugin CEF est mature et bien documente
-- **Port GELF distinct (12202)** : evite toute interference avec le flux
-  primaire `proxy-service -> log-service` (port 12201)
+- **Bash plutot qu'un outil d'orchestration dedie** (Ansible, Terraform) :
+  coherent avec la taille actuelle du projet (une seule machine cible),
+  evite d'introduire une dependance supplementaire non demandee
+- **Attente active de Graylog** (polling) plutot qu'un simple `sleep` fixe :
+  plus fiable, car le temps de demarrage de Graylog/Elasticsearch peut varier
+  significativement selon les ressources de la machine
+- **Option `SKIP_NPM`** : permet de tester la stack applicative en local sans
+  toucher a la configuration DNS/NPM de production
 
-### ⚠️ Points a valider avec l'utilisateur (bloquants pour la mise en prod)
-- **Mécanisme d'authentification exact attendu par l'intake Sekoia** (cle
-  d'intake, mTLS, whitelisting IP...) -- non implemente par manque de
-  documentation Sekoia officielle disponible au moment du developpement
-- **Configuration de l'output GELF cote Graylog** vers `siem-connector` :
-  manuelle actuellement (pas encore scriptee dans le provisioning
-  `log-service`)
-- **Mapping CEF** : a completer si Sekoia attend des champs specifiques
-  additionnels
+### ⚠️ Points a valider avec l'utilisateur
+- **Dimensionnement serveur reel** non valide en conditions de charge
+- **Strategie de sauvegarde** (PostgreSQL, volumes Graylog/Elasticsearch) non
+  couverte par ce script -- a definir separement
+- Toujours en attente : **mecanisme d'authentification Sekoia** (report
+  explicitement accepte par l'utilisateur pour une prochaine etape)
 
 ---
 
-## Prochaines étapes possibles (aucune n'est bloquante pour un premier POC)
+## Prochaines étapes possibles
 
-- [ ] Lever les points d'authentification Sekoia ci-dessus avec un contact Sekoia
+- [ ] Clarifier et implementer l'authentification de l'intake Sekoia
 - [ ] Automatiser l'output GELF Graylog -> siem-connector dans le provisioning
 - [ ] Tests end-to-end du parcours complet (redirection Wi-Fi -> auth -> tracabilite -> SIEM)
 - [ ] CI/CD complet sur tous les modules (actuellement partiel, auth-service uniquement)
+- [ ] Definir une strategie de sauvegarde (PostgreSQL, Graylog, Elasticsearch)
 - [ ] Personnalisation visuelle du portail (logo, couleurs de marque)
 - [ ] Integration PMS hotelier pour le provisionnement automatique des codes de chambre
