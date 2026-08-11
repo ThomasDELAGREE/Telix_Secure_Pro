@@ -113,9 +113,23 @@ services:
       - GATEWAY_SERVER_NAME=${GATEWAY_SERVER_NAME}
     volumes:
       - gateway_certs:/etc/nginx/certs
+      - certbot_webroot:/var/www/certbot
+      - letsencrypt_certs:/etc/letsencrypt:ro
     depends_on:
       - captive-portal
       - auth-service
+    restart: unless-stopped
+
+  certbot:
+    build: ../certbot
+    environment:
+      - GATEWAY_SERVER_NAME=${GATEWAY_SERVER_NAME}
+      - CERTBOT_EMAIL=${CERTBOT_EMAIL}
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - letsencrypt_certs:/etc/letsencrypt
+    depends_on:
+      - gateway
     restart: unless-stopped
 
 volumes:
@@ -125,3 +139,5 @@ volumes:
   mongo_data:
   graylog_data:
   gateway_certs:
+  certbot_webroot:
+  letsencrypt_certs:
