@@ -71,7 +71,11 @@ services:
 
   siem-connector:
     build: ../siem-connector
-    env_file: .env
+    ports:
+      - "12202:12202/udp"
+    environment:
+      - SEKOIA_SYSLOG_HOST=${SEKOIA_SYSLOG_HOST}
+      - SEKOIA_SYSLOG_PORT=${SEKOIA_SYSLOG_PORT}
     depends_on:
       - log-service
     restart: unless-stopped
