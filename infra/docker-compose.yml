@@ -4,9 +4,7 @@ version: '3.9'
 # docker-compose depuis la migration vers Nginx Proxy Manager (NPM), qui fait
 # partie de l'infrastructure partagee existante (groupe-odisecure.fr) et n'est
 # pas versionne dans ce depot. Voir docs/npm-provisioning.md et ADR-007.
-# Les services ci-dessous restent exposes sur le reseau Docker sous leur nom
-# de service, pour que NPM (sur l'hote ou un reseau partage) puisse les cibler
-# en 'forward_host'.
+# NPM cible directement le service 'captive-portal' ci-dessous (port 80).
 
 services:
 
@@ -14,8 +12,6 @@ services:
     build: ../captive-portal
     expose:
       - "80"
-    environment:
-      - REACT_APP_API_URL=/api/auth
     depends_on:
       - auth-service
     restart: unless-stopped
@@ -46,9 +42,9 @@ services:
   log-service:
     image: graylog/graylog:6.0
     ports:
-      - "9000:9000"     # Interface web + API REST
-      - "12201:12201/udp" # Reception GELF (proxy-service)
-      - "1514:1514/udp"   # Reception Syslog (equipements tiers, optionnel)
+      - "9000:9000"
+      - "12201:12201/udp"
+      - "1514:1514/udp"
     environment:
       - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET}
       - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2}
