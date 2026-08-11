@@ -1,0 +1,2 @@
+- pipeline.id: graylog-to-sekoia
+  path.config: "/usr/share/logstash/pipeline/graylog-to-sekoia.conf"

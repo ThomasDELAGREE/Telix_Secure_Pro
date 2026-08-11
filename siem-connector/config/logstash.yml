@@ -1,0 +1,5 @@
+# Configuration minimale : pas de X-Pack monitoring (necessiterait une
+# licence), un seul pipeline dedie.
+node.name: telix-siem-connector
+path.config: /usr/share/logstash/pipeline
+xpack.monitoring.enabled: false
