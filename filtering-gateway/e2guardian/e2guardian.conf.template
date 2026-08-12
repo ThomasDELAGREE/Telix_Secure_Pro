@@ -1,0 +1,35 @@
+# Configuration e2guardian -- gabarit de base pour le filtrage par categories
+# STATUT : non teste en conditions reelles, ecrit a partir de la documentation
+# publique du projet. A valider par un PoC avant mise en production.
+#
+# Reference (a verifier a l'installation) : la syntaxe exacte peut varier
+# selon la version d'e2guardian installee (5.x vise ici, cf ADR-008).
+
+daemonuser = 'e2guardian'
+daemongroup = 'e2guardian'
+
+# Port d'ecoute cote proxy explicite (le trafic web des agents distants
+# arrive ici, en sortie du tunnel WireGuard)
+filterport = 8080
+
+# Mode transparent desactive par defaut : on part du principe que le
+# trafic est deja route explicitement vers ce port via la configuration
+# reseau du tunnel WireGuard, pas via une interception transparente.
+transparent = off
+
+# Repertoire des listes de blocage generees depuis UT1
+# (voir scripts/sync_ut1_blocklists.py)
+sitelistdir = '/etc/e2guardian/lists'
+
+# Categories activees par defaut -- A ADAPTER selon la configuration
+# souhaitee par client/tenant (pas encore parametrable dynamiquement dans
+# ce squelette, cf point bloquant #1 du README)
+sitelist = 'publicite/domains'
+sitelist = 'reseaux_sociaux/domains'
+sitelist = 'streaming/domains'
+
+# Format de journalisation -- a aligner avec le format JSON utilise par
+# proxy-service (Squid) pour rester coherent au niveau du log-service /
+# siem-connector en aval
+loglevel = 2
+logfileformat = 3

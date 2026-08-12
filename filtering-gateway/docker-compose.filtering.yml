@@ -1,0 +1,37 @@
+# Stack Docker Compose du module filtering-gateway
+# STATUT : squelette non teste (voir README.md du module pour les points
+# bloquants). A fusionner/inclure avec infra/docker-compose.yml une fois
+# valide par un PoC.
+
+services:
+  filtering-gateway-api:
+    build:
+      context: ./api
+    container_name: filtering-gateway-api-1
+    ports:
+      - "8090:8090"
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8090"]
+    restart: unless-stopped
+
+  filtering-gateway-e2guardian:
+    image: e2guardian/e2guardian:v5.5
+    container_name: filtering-gateway-e2guardian-1
+    volumes:
+      - ./e2guardian/e2guardian.conf.template:/etc/e2guardian/e2guardian.conf:ro
+      - ./e2guardian/lists:/etc/e2guardian/lists:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  filtering-gateway-haproxy:
+    image: haproxy:2.9
+    container_name: filtering-gateway-haproxy-1
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "51820:51820/udp"
+      - "8090:8090"
+    depends_on:
+      - filtering-gateway-api
+      - filtering-gateway-e2guardian
+    restart: unless-stopped
