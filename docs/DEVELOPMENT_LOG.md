@@ -21,54 +21,48 @@
 | `siem-connector` | ✅ Terminé (voir limitation auth Sekoia) | `bcef70f`, `002c519` |
 | `scripts/deploy.sh` | ✅ Terminé | `4343971`, `0348a14` |
 | CI/CD complet | 🟡 Partiel | `cc8f08e` |
-| **Extension mobilite/teletravail** | 🔲 Cadrage fait (ADR-008), dev à venir | `<ce commit>` |
+| **Extension mobilite/teletravail** | 🔲 Briques choisies (ADR-008), PoC à venir | `7dc2068`, `<ce commit>` |
 
 **🎉 Le périmètre initial (portail captif Wi-Fi) est entièrement développé et
-déployable. Le projet entre maintenant dans une phase d'extension vers la
-mobilité/télétravail (agent + passerelle de filtrage centralisée).**
+déployable. Le choix des briques pour l'extension mobilité/télétravail est
+désormais acté, un PoC technique est la prochaine étape.**
 
 ---
 
-## Étape 11 — Cadrage de l'extension mobilité/télétravail (ADR-008)
+## Étape 12 — Choix des briques pour l'extension mobilité/télétravail (ADR-008)
 **Date :** 2026-08-12 | **Commit :** `<ce commit>`
 
 ### Contexte
-L'utilisateur souhaite, en plus du portail captif Wi-Fi, pouvoir tracer et
-filtrer l'usage Internet des utilisateurs en mobilité/télétravail -- un cas
-d'usage différent (pas de reseau local physique commun a instrumenter),
-qui se rapproche d'une solution SWG (Secure Web Gateway).
+Suite au cadrage de l'étape 11, il fallait trancher les briques concrètes.
+L'utilisateur proposait initialement SquidGuard pour le filtrage -- une
+vérification a montré que ce projet est en pratique à l'arrêt (dernière
+version stable vieille de plus de 15 ans, support retiré par pfSense/
+Netgate). **e2guardian** a été retenu à la place, après vérification de
+son activité réelle (commits récents constatés sur son dépôt officiel).
 
-### Décisions actees (ADR-008)
-- Deux familles de cas d'usage (local vs distant), un moteur commun
-  (`auth-service`, `log-service` reutilisés)
-- **Agent Windows et macOS** uniquement pour l'instant (pas de mobile)
-- **Filtrage par categories** dans un premier temps (SNI/DNS/proxy explicite),
-  **inspection SSL/TLS profonde explicitement reportée**
-- **Mode dégradé pensé** en cas de coupure agent <-> passerelle centrale :
-  pas de blocage total (pas de kill switch strict par defaut), maintien
-  d'une liste de filtrage "de base" en cache local sur le poste, et mise en
-  cache locale des evenements de tracabilite, rejoués vers `log-service` au
-  retour de la connexion
-- Architecture pensée sans etat sur la passerelle centrale (comme
-  `proxy-service`), pour scalabilite horizontale future (200 utilisateurs
-  au départ, croissance anticipée)
+### Décisions actees
+- **Tunnel** : WireGuard
+- **Filtrage par catégories** : e2guardian (et non SquidGuard)
+- **Blocklists** : UT1 Blacklists (Université Toulouse 1)
+- **Cache local chiffré (agent)** : SQLite + SQLCipher
+- **Rétention locale du cache en mode dégradé : 30 jours** (decision
+  utilisateur)
+- **Equilibrage de charge de la passerelle** : HAProxy
 
-### ⚠️ Points explicitement ouverts, à lever avant developpement
-- **Choix definitif des briques** (WireGuard, SquidGuard/e2guardian ou
-  filtrage DNS, HAProxy/Traefik) -- aucune n'a ete testee a ce stade, un PoC
-  est necessaire
-- **Conception detaillee du mode degrade** (format du cache local chiffre,
-  duree de retention locale, protocole de rejeu des logs) -- pas encore
-  specifie techniquement
-- **Robustesse de e2guardian** en particulier a verifier (etat de
-  maintenance variable observe dans l'ecosysteme open source) avant de s'y
-  engager
+### ⚠️ Points explicitement ouverts, à lever avant developpement complet
+- **PoC technique requis** : aucune de ces briques n'a encore été testée
+  dans le cadre concret de ce projet (charge, compatibilité fine)
+- **Vitalité d'e2guardian à surveiller dans la durée** (mode maintenance,
+  pas de developpement actif de nouvelles fonctionnalites observe)
+- **Conception detaillee du protocole de synchronisation/rejeu** des logs
+  en mode degrade, et de la purge a 30 jours -- pas encore specifiee
+  techniquement
 
 ### Prochaines étapes
-- [ ] PoC technique : agent WireGuard + passerelle Squid/SquidGuard sur un
-      poste de test, mesure de la latence/charge
+- [ ] PoC technique : agent WireGuard + passerelle e2guardian sur un poste
+      de test, mesure de la latence/charge
 - [ ] Concevoir le protocole agent <-> passerelle (enregistrement, sync des
-      listes de filtrage, rejeu des logs en mode degrade)
-- [ ] Definir le format et la duree du cache local chiffre sur le poste
+      listes de filtrage UT1, rejeu des logs en mode degrade, purge 30j)
 - [ ] Etendre `auth-service` pour la generation de configuration agent par
       utilisateur (cles WireGuard, association a une identite existante)
+- [ ] Mettre en place HAProxy devant la passerelle de filtrage
