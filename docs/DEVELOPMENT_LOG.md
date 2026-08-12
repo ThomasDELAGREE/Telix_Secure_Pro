@@ -19,55 +19,56 @@
 | `npm-provisioning` (NPM + DNS-01 OVH) | ✅ Terminé | `7cd5403`, `66321a4` |
 | `captive-portal` | ✅ Terminé | `e73e5bf`, `51b69c4`, `76de9df`, `3d8677c`, `bcebdd3` |
 | `siem-connector` | ✅ Terminé (voir limitation auth Sekoia) | `bcef70f`, `002c519` |
-| **`scripts/deploy.sh`** | ✅ Terminé | `4343971`, `<ce commit>` |
+| `scripts/deploy.sh` | ✅ Terminé | `4343971`, `0348a14` |
 | CI/CD complet | 🟡 Partiel | `cc8f08e` |
+| **Extension mobilite/teletravail** | 🔲 Cadrage fait (ADR-008), dev à venir | `<ce commit>` |
 
-**🎉 Tous les modules fonctionnels prevus initialement sont développés, et le
-déploiement est desormais scripte de bout en bout (hors etapes manuelles
-documentees).**
-
----
-
-## Étape 10 — Script de déploiement unique `scripts/deploy.sh`
-**Date :** 2026-08-11 | **Commits :** `4343971`, `<ce commit>`
-
-### Ce qui a été fait
-- **`scripts/deploy.sh`** : script bash idempotent qui enchaine
-  automatiquement :
-  1. Vérifications préalables (Docker, Docker Compose, presence de `infra/.env`)
-  2. `docker compose up -d --build`
-  3. Attente active de la disponibilite de l'API Graylog
-  4. Provisioning Graylog (retention 1 an, input GELF, stream)
-  5. Provisioning DNS OVH + proxy host NPM (defi DNS-01), avec option de
-     saut (`SKIP_NPM=true`) pour les environnements de developpement
-- Documentation complète : `docs/deployment.md` (pre-requis, variables,
-  etapes manuelles restantes, verification post-deploiement)
-
-### Décisions techniques
-- **Bash plutot qu'un outil d'orchestration dedie** (Ansible, Terraform) :
-  coherent avec la taille actuelle du projet (une seule machine cible),
-  evite d'introduire une dependance supplementaire non demandee
-- **Attente active de Graylog** (polling) plutot qu'un simple `sleep` fixe :
-  plus fiable, car le temps de demarrage de Graylog/Elasticsearch peut varier
-  significativement selon les ressources de la machine
-- **Option `SKIP_NPM`** : permet de tester la stack applicative en local sans
-  toucher a la configuration DNS/NPM de production
-
-### ⚠️ Points a valider avec l'utilisateur
-- **Dimensionnement serveur reel** non valide en conditions de charge
-- **Strategie de sauvegarde** (PostgreSQL, volumes Graylog/Elasticsearch) non
-  couverte par ce script -- a definir separement
-- Toujours en attente : **mecanisme d'authentification Sekoia** (report
-  explicitement accepte par l'utilisateur pour une prochaine etape)
+**🎉 Le périmètre initial (portail captif Wi-Fi) est entièrement développé et
+déployable. Le projet entre maintenant dans une phase d'extension vers la
+mobilité/télétravail (agent + passerelle de filtrage centralisée).**
 
 ---
 
-## Prochaines étapes possibles
+## Étape 11 — Cadrage de l'extension mobilité/télétravail (ADR-008)
+**Date :** 2026-08-12 | **Commit :** `<ce commit>`
 
-- [ ] Clarifier et implementer l'authentification de l'intake Sekoia
-- [ ] Automatiser l'output GELF Graylog -> siem-connector dans le provisioning
-- [ ] Tests end-to-end du parcours complet (redirection Wi-Fi -> auth -> tracabilite -> SIEM)
-- [ ] CI/CD complet sur tous les modules (actuellement partiel, auth-service uniquement)
-- [ ] Definir une strategie de sauvegarde (PostgreSQL, Graylog, Elasticsearch)
-- [ ] Personnalisation visuelle du portail (logo, couleurs de marque)
-- [ ] Integration PMS hotelier pour le provisionnement automatique des codes de chambre
+### Contexte
+L'utilisateur souhaite, en plus du portail captif Wi-Fi, pouvoir tracer et
+filtrer l'usage Internet des utilisateurs en mobilité/télétravail -- un cas
+d'usage différent (pas de reseau local physique commun a instrumenter),
+qui se rapproche d'une solution SWG (Secure Web Gateway).
+
+### Décisions actees (ADR-008)
+- Deux familles de cas d'usage (local vs distant), un moteur commun
+  (`auth-service`, `log-service` reutilisés)
+- **Agent Windows et macOS** uniquement pour l'instant (pas de mobile)
+- **Filtrage par categories** dans un premier temps (SNI/DNS/proxy explicite),
+  **inspection SSL/TLS profonde explicitement reportée**
+- **Mode dégradé pensé** en cas de coupure agent <-> passerelle centrale :
+  pas de blocage total (pas de kill switch strict par defaut), maintien
+  d'une liste de filtrage "de base" en cache local sur le poste, et mise en
+  cache locale des evenements de tracabilite, rejoués vers `log-service` au
+  retour de la connexion
+- Architecture pensée sans etat sur la passerelle centrale (comme
+  `proxy-service`), pour scalabilite horizontale future (200 utilisateurs
+  au départ, croissance anticipée)
+
+### ⚠️ Points explicitement ouverts, à lever avant developpement
+- **Choix definitif des briques** (WireGuard, SquidGuard/e2guardian ou
+  filtrage DNS, HAProxy/Traefik) -- aucune n'a ete testee a ce stade, un PoC
+  est necessaire
+- **Conception detaillee du mode degrade** (format du cache local chiffre,
+  duree de retention locale, protocole de rejeu des logs) -- pas encore
+  specifie techniquement
+- **Robustesse de e2guardian** en particulier a verifier (etat de
+  maintenance variable observe dans l'ecosysteme open source) avant de s'y
+  engager
+
+### Prochaines étapes
+- [ ] PoC technique : agent WireGuard + passerelle Squid/SquidGuard sur un
+      poste de test, mesure de la latence/charge
+- [ ] Concevoir le protocole agent <-> passerelle (enregistrement, sync des
+      listes de filtrage, rejeu des logs en mode degrade)
+- [ ] Definir le format et la duree du cache local chiffre sur le poste
+- [ ] Etendre `auth-service` pour la generation de configuration agent par
+      utilisateur (cles WireGuard, association a une identite existante)
