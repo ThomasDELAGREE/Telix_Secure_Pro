@@ -1,52 +1,18 @@
 """
 services.wireguard_service
 --------------------------
-Generation de paires de cles WireGuard (X25519) et allocation d'adresses
-IP dans le pool du tunnel, pour l'enrollment des agents distants
-(remote-agent), voir ADR-008.
+Allocation d'adresses IP dans le pool du tunnel, pour l'enrollment des
+agents distants (remote-agent), voir ADR-008.
 
-HYPOTHESE (a valider) : la generation de cles se fait ici cote serveur
-(auth-service genere la cle privee ET la transmet une seule fois a
-l'agent). C'est plus simple a operer que de demander a l'agent de
-generer sa propre paire et de n'envoyer que la cle publique, mais cela
-signifie qu'auth-service voit transitoirement la cle privee de
-l'utilisateur. Alternative a envisager si ce point pose probleme cote
-securite/conformite : agent genere sa propre paire localement et
-n'envoie que sa cle publique a /auth/agent/enroll.
+CHANGEMENT (2026-08-12) : la fonction generate_keypair() a ete retiree de
+ce module -- la generation de cles WireGuard se fait desormais
+EXCLUSIVEMENT cote agent (voir remote-agent/agent/enrollment.py), pas cote
+serveur. auth-service ne genere plus, ne voit plus et ne stocke plus de
+cle privee WireGuard d'aucun utilisateur.
 """
 from __future__ import annotations
 
-import base64
 import ipaddress
-
-from cryptography.hazmat.primitives.asymmetric.x25519 import (
-    X25519PrivateKey,
-)
-from cryptography.hazmat.primitives import serialization
-
-
-def generate_keypair() -> tuple[str, str]:
-    """
-    Genere une paire de cles X25519 compatible WireGuard, encodee en
-    base64 (format attendu par `wg` / les fichiers de config WireGuard).
-    Retourne (private_key_b64, public_key_b64).
-    """
-    private_key = X25519PrivateKey.generate()
-    public_key = private_key.public_key()
-
-    private_bytes = private_key.private_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PrivateFormat.Raw,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-    public_bytes = public_key.public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
-    )
-    return (
-        base64.b64encode(private_bytes).decode("ascii"),
-        base64.b64encode(public_bytes).decode("ascii"),
-    )
 
 
 class IpPoolExhausted(Exception):
